@@ -1,0 +1,11 @@
+# Core Libraries for data fetching and analysis
+requests
+pandas
+openpyxl
+
+# Libraries for plotting
+matplotlib
+seaborn
+
+# Library for packaging into an EXE
+pyinstaller
