@@ -31,8 +31,9 @@
     python dota_analyzer_interactive.py
     ```
 3.  根据屏幕上的提示，依次输入您的选择和参数（例如：分析模式、您的Account ID、比赛数量、经济领先阈值等）。
-4.  程序将自动开始执行。如果选择“抽样调查模式”，请耐心等待所有流程完成。
-5.  分析结束后，您会在项目文件夹下找到：
+4.  Account ID 在: https://www.dotabuff.com 搜索自己的DOTA ID 然后 网页栏中最后便是
+5.  程序将自动开始执行。如果选择“抽样调查模式”，请耐心等待所有流程完成。
+6.  分析结束后，您会在项目文件夹下找到：
     - 一个名为 `dota_analysis_report_... .xlsx` 的Excel报告文件。
     - 一个名为 `plots` 的文件夹，其中包含了生成的图表图片。
 
@@ -43,5 +44,6 @@
 This tool was born from an exploration into data analysis. Its core logic and features were co-developed in a deep and iterative collaboration with Google's AI model, **Gemini**. Gemini provided critical assistance throughout the process, including code generation, logic optimization, debugging, and feature enhancement.
 
 ## 📄 许可证 (License)
+
 
 本 sourdough 项目基于 [MIT License](LICENSE) 开源。
