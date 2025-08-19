@@ -18,7 +18,7 @@ RANK_TIERS = {
     64: "万古 IV", 65: "万古 V", 71: "超凡 I", 72: "超凡 II", 73: "超凡 III", 74: "超凡 IV", 75: "超凡 V", 80: "冠绝"
 }
 LANE_ROLES = {1: "优势路", 2: "中路", 3: "劣势路", 4: "游走"}
-OUTPUT_PLOT_DIRECTORY = "plots"
+OUTPUT_PLOT_DIRECTORY = f"plots//dota_analysis_report_{time.strftime('%Y%m%d_%H%M')}"
 
 # 智能重试配置
 RETRY_ATTEMPTS = 2
@@ -71,8 +71,8 @@ def get_first_to_advantage_threshold(match_data, is_radiant, threshold):
 # 交互式获取用户输入
 # ==============================================================================
 def get_user_input():
-    print("--- Dota 2 胜局分析 ---")
-    print("--- @ZHIEND ---")
+    print("--- Dota 2 胜局分析 ver.1.0.1 ---")
+    print("--- @ZHIEND  ---")
     config = {}
     while True:
         mode = input(
@@ -182,7 +182,6 @@ def run_analysis_flow(config, player_ids_to_scan, scan_limit):
         results.append(row_data)
     return pd.DataFrame(results), advantage_col_name
 
-
 # ==============================================================================
 # 最终步骤：生成报告和图表
 # ==============================================================================
@@ -206,27 +205,27 @@ def generate_report_and_plots(df, advantage_col_name, config):
     mode = config['mode']
     threshold = config['threshold']
 
-    summary_stats = {"分析模式": "抽样调查" if mode == '1' else "个人战绩", "经济领先阈值": threshold}  # <<< 术语优化
+    # --- 核心统计计算 ---
+    summary_stats = {"分析模式": "抽样调查" if mode == '1' else "个人战绩", "经济领先阈值": threshold}
     first_to_adv_games = pd.DataFrame()
 
     if not valid_df.empty:
         first_to_adv_games = valid_df[valid_df[advantage_col_name] == 1]
         summary_stats["总有效分析样本数"] = len(valid_df)
-        summary_stats[f"率先达到{threshold}领先的样本数"] = len(first_to_adv_games)  # <<< 术语优化
+        summary_stats[f"率先达到{threshold}G领先的样本数"] = len(first_to_adv_games)
 
         if not first_to_adv_games.empty:
             win_rate = first_to_adv_games['Won_Match'].mean() * 100
-            summary_stats[f"率先达到{threshold}领先后胜率"] = f"{win_rate:.2f}%"  # <<< 术语优化
+            summary_stats[f"率先达到{threshold}G领先后胜率"] = f"{win_rate:.2f}%"
         else:
-            summary_stats[f"率先达到{threshold}领先后胜率"] = "0% (无此类样本)"
+            summary_stats[f"率先达到{threshold}G领先后胜率"] = "0% (无此类样本)"
 
-        # <<< 新增：翻盘成功率计算 >>>
         comeback_possible_games = valid_df[valid_df[advantage_col_name] == 0]
         if not comeback_possible_games.empty:
             comeback_wins = comeback_possible_games['Won_Match'].sum()
             total_comeback_possible = len(comeback_possible_games)
             comeback_win_rate = (comeback_wins / total_comeback_possible) * 100
-            summary_stats["翻盘成功率 (未率先达到领先)"] = f"{comeback_win_rate:.2f}%"  # <<< 术语优化
+            summary_stats["翻盘成功率 (未率先达到领先)"] = f"{comeback_win_rate:.2f}%"
         else:
             summary_stats["翻盘成功率 (未率先达到领先)"] = "N/A (无劣势对局样本)"
     else:
@@ -239,80 +238,150 @@ def generate_report_and_plots(df, advantage_col_name, config):
         summary_df.to_excel(writer, sheet_name='统计概要 (Summary)', index=False)
     print(f"\n[SUCCESS] 最终报告已保存至: {os.path.abspath(output_excel_file)}")
 
+    # --- 绘图 ---
     if not os.path.exists(OUTPUT_PLOT_DIRECTORY): os.makedirs(OUTPUT_PLOT_DIRECTORY)
     set_chinese_font()
 
-    # 图表1: 领先后的胜负分布饼图
-    if not first_to_adv_games.empty:
-        win_loss_counts = first_to_adv_games['Won_Match'].value_counts()
-        plt.figure(figsize=(8, 8));
-        plt.pie(win_loss_counts, labels=[{1: '胜利 (Win)', 0: '失败 (Loss)'}[i] for i in win_loss_counts.index],
-                autopct='%1.1f%%', startangle=90, colors=['#90EE90', '#FFB6C1'], textprops={'fontsize': 14})
-        plt.title(f'率先达到 {threshold} 经济领先后比赛结果分布', fontsize=16)
-        pie_path = os.path.join(OUTPUT_PLOT_DIRECTORY, f"pie_chart_lead_win_loss_{time.strftime('%Y%m%d_%H%M')}.png")
-        plt.savefig(pie_path);
-        plt.close()
-        print(f"[SUCCESS] 图表1 (领先胜负分布) 已保存至: {pie_path}")
+    if valid_df.empty:
+        print("[INFO] 无有效数据，跳过绘图步骤。")
+        return
 
-    # 图表2: 胜利组成饼图
+    # --- 图1: 总局数构成图 ---
+    print("正在生成图表1：总对局构成分析...")
+    total_composition = valid_df[advantage_col_name].value_counts()
+    if 1 not in total_composition: total_composition[1] = 0
+    if 0 not in total_composition: total_composition[0] = 0
+    labels_total = {1: f'经济优势局数\n({total_composition[1]} 场)', 0: f'经济劣势局数\n({total_composition[0]} 场)'}
+    plt.figure(figsize=(8, 8));
+    plt.pie(total_composition, labels=[labels_total[i] for i in total_composition.index], autopct='%1.1f%%',
+            startangle=90, colors=['#87CEFA', '#FFB6C1'], wedgeprops={'edgecolor': 'white', 'linewidth': 2},
+            textprops={'fontsize': 14})
+    plt.title(f'总局数构成分析 (总样本: {len(valid_df)} 场)', fontsize=16)
+    formula_text = f"计算公式: 总局数 ({len(valid_df)}) = 经济优势局数 ({total_composition[1]}) + 经济劣势局数 ({total_composition[0]})"
+    plt.figtext(0.5, 0.02, formula_text, ha="center", fontsize=11, bbox={"facecolor": "gray", "alpha": 0.2, "pad": 5})
+    chart1_path = os.path.join(OUTPUT_PLOT_DIRECTORY, f"01_总对局构成_{time.strftime('%Y%m%d_%H%M')}.png")
+    plt.savefig(chart1_path);
+    plt.close()
+    print(f"[SUCCESS] 图表1 (总对局构成分析) 已保存至: {chart1_path}")
+
+    # --- 图2: 胜利失败占比图 ---
+    print("正在生成图表2：总对局胜负占比...")
+    win_loss_total = valid_df['Won_Match'].value_counts()
+    if 1 not in win_loss_total: win_loss_total[1] = 0
+    if 0 not in win_loss_total: win_loss_total[0] = 0
+    labels_win_loss = {1: f'胜利\n({win_loss_total[1]} 场)', 0: f'失败\n({win_loss_total[0]} 场)'}
+    plt.figure(figsize=(8, 8));
+    plt.pie(win_loss_total, labels=[labels_win_loss[i] for i in win_loss_total.index], autopct='%1.1f%%', startangle=90,
+            colors=['#90EE90', '#F08080'], wedgeprops={'edgecolor': 'white', 'linewidth': 2},
+            textprops={'fontsize': 14})
+    plt.title(f'总对局胜负占比 (总样本: {len(valid_df)} 场)', fontsize=16)
+    win_rate_percent = (win_loss_total[1] / len(valid_df)) * 100 if len(valid_df) > 0 else 0
+    formula_text = f"计算公式: 胜率 ({win_rate_percent:.1f}%) = 胜利的总局数 ({win_loss_total[1]}) / 总局数 ({len(valid_df)})"
+    plt.figtext(0.5, 0.02, formula_text, ha="center", fontsize=11, bbox={"facecolor": "gray", "alpha": 0.2, "pad": 5})
+    chart2_path = os.path.join(OUTPUT_PLOT_DIRECTORY, f"02_总对局胜负占比_{time.strftime('%Y%m%d_%H%M')}.png")
+    plt.savefig(chart2_path);
+    plt.close()
+    print(f"[SUCCESS] 图表2 (总对局胜负占比) 已保存至: {chart2_path}")
+
+    # --- 图3: 经济优势局结果分布图 ---
+    print("正在生成图表3：经济优势局结果分布...")
+    if not first_to_adv_games.empty:
+        lead_win_loss_counts = first_to_adv_games['Won_Match'].value_counts()
+        if 1 not in lead_win_loss_counts: lead_win_loss_counts[1] = 0
+        if 0 not in lead_win_loss_counts: lead_win_loss_counts[0] = 0
+        labels_lead = {1: f'经济优势获胜\n({lead_win_loss_counts[1]} 场)',
+                       0: f'经济优势被翻盘\n({lead_win_loss_counts[0]} 场)'}
+        plt.figure(figsize=(8, 8));
+        plt.pie(lead_win_loss_counts, labels=[labels_lead[i] for i in lead_win_loss_counts.index], autopct='%1.1f%%',
+                startangle=90, colors=['#90EE90', '#FFB6C1'], wedgeprops={'edgecolor': 'white', 'linewidth': 2},
+                textprops={'fontsize': 14})
+        plt.title(f'率先达到 {threshold}G 经济领先后比赛结果分布', fontsize=16)
+        lead_win_rate_percent = (lead_win_loss_counts[1] / len(first_to_adv_games)) * 100 if len(
+            first_to_adv_games) > 0 else 0
+        formula_text = f"计算公式: 领先致胜率 ({lead_win_rate_percent:.1f}%) = 经济优势获胜 ({lead_win_loss_counts[1]}) / 经济优势局数 ({len(first_to_adv_games)})"
+        plt.figtext(0.5, 0.02, formula_text, ha="center", fontsize=11,
+                    bbox={"facecolor": "gray", "alpha": 0.2, "pad": 5})
+        chart3_path = os.path.join(OUTPUT_PLOT_DIRECTORY, f"03_经济优势胜负_{time.strftime('%Y%m%d_%H%M')}.png")
+        plt.savefig(chart3_path);
+        plt.close()
+        print(f"[SUCCESS] 图表3 (经济优势局结果) 已保存至: {chart3_path}")
+
+    # --- 图4: 经济劣势局结果分布图 ---
+    print("正在生成图表4：经济劣势局结果分布...")
+    disadvantage_games_df = valid_df[valid_df[advantage_col_name] == 0]
+    if not disadvantage_games_df.empty:
+        comeback_distribution = disadvantage_games_df['Won_Match'].value_counts()
+        if 1 not in comeback_distribution: comeback_distribution[1] = 0
+        if 0 not in comeback_distribution: comeback_distribution[0] = 0
+        labels_comeback = {1: f'经济劣势获胜 (翻盘)\n({comeback_distribution[1]} 场)',
+                           0: f'经济劣势失败\n({comeback_distribution[0]} 场)'}
+        plt.figure(figsize=(8, 8));
+        plt.pie(comeback_distribution, labels=[labels_comeback[i] for i in comeback_distribution.index],
+                autopct='%1.1f%%', startangle=90, colors=['#FFD700', '#A9A9A9'],
+                wedgeprops={'edgecolor': 'white', 'linewidth': 2}, textprops={'fontsize': 14})
+        plt.title(f'经济劣势局结果分布 (总样本: {len(disadvantage_games_df)} 场)', fontsize=16)
+        comeback_rate_percent = (comeback_distribution[1] / len(disadvantage_games_df)) * 100 if len(
+            disadvantage_games_df) > 0 else 0
+        formula_text = f"计算公式: 翻盘概率 ({comeback_rate_percent:.1f}%) = 经济劣势获胜 ({comeback_distribution[1]}) / 经济劣势局数 ({len(disadvantage_games_df)})"
+        plt.figtext(0.5, 0.02, formula_text, ha="center", fontsize=11,
+                    bbox={"facecolor": "gray", "alpha": 0.2, "pad": 5})
+        chart4_path = os.path.join(OUTPUT_PLOT_DIRECTORY,
+                                   f"04_经济劣势胜负_{time.strftime('%Y%m%d_%H%M')}.png")
+        plt.savefig(chart4_path);
+        plt.close()
+        print(f"[SUCCESS] 图表4 (经济劣势局结果) 已保存至: {chart4_path}")
+
+    # --- 图5: 胜利组成图 ---
+    print("正在生成图表5：胜利组成分析...")
     wins_df = valid_df[valid_df['Won_Match'] == 1]
     if not wins_df.empty:
         win_composition = wins_df[advantage_col_name].value_counts()
-        labels = {1: f'领先致胜 \n(率先达到 {threshold} 经济领先)', 0: f'翻盘获胜 \n(未率先达到 {threshold} 经济领先)'}
-
+        if 1 not in win_composition: win_composition[1] = 0
+        if 0 not in win_composition: win_composition[0] = 0
+        labels = {1: f'领先致胜', 0: f'翻盘获胜'}
         plt.figure(figsize=(8, 8));
-        plt.pie(win_composition, labels=[labels[i] for i in win_composition.index],
-                autopct='%1.1f%%', startangle=90, colors=['#87CEFA', '#FFD700'], textprops={'fontsize': 14})
-        plt.title(f'所有胜利对局的组成', fontsize=16)
-        pie_path_composition = os.path.join(OUTPUT_PLOT_DIRECTORY,
-                                            f"pie_chart_win_composition_{time.strftime('%Y%m%d_%H%M')}.png")
-        plt.savefig(pie_path_composition);
+        plt.pie(win_composition, labels=[labels[i] for i in win_composition.index], autopct='%1.1f%%', startangle=90,
+                colors=['#87CEFA', '#FFD700'], textprops={'fontsize': 14})
+        plt.title(f'所有胜利对局的组成分析 (总胜场: {len(wins_df)})', fontsize=16)
+        lead_wins = win_composition[1]
+        comeback_wins = win_composition[0]
+        formula_text = f"计算公式: 总胜场 ({len(wins_df)}) = 领先致胜 ({lead_wins}) + 翻盘获胜 ({comeback_wins})"
+        plt.figtext(0.5, 0.02, formula_text, ha="center", fontsize=11,
+                    bbox={"facecolor": "gray", "alpha": 0.2, "pad": 5})
+        chart5_path = os.path.join(OUTPUT_PLOT_DIRECTORY, f"05_胜利组成_{time.strftime('%Y%m%d_%H%M')}.png")
+        plt.savefig(chart5_path);
         plt.close()
-        print(f"[SUCCESS] 图表2 (胜利组成分析) 已保存至: {pie_path_composition}")
+        print(f"[SUCCESS] 图表5 (胜利组成分析) 已保存至: {chart5_path}")
 
-        # 图表3: 按段位分析柱状图
-        if mode == '1' and 'Medal' in valid_df.columns and valid_df['Medal'].notna().any():
-            valid_df['Rank_Group'] = valid_df['Medal'].apply(lambda x: str(x).split(' ')[0])
-
-            # 同时计算平均值(胜率)和总数(样本量)
-            # 我们只分析那些率先取得经济领先的比赛
-            first_adv_df = valid_df[valid_df[advantage_col_name] == 1]
-            # 对这些比赛按段位分组，并同时计算胜率和数量
-            rank_analysis = first_adv_df.groupby('Rank_Group')['Won_Match'].agg(['mean', 'count'])
-
-            if not rank_analysis.empty:
-                # 定义一个期望的段位顺序，以便图表排序
-                rank_order = ["冠绝", "超凡", "万古", "传奇", "统帅", "中军", "卫士", "先锋", "未定级"]
-                ordered_index = [rank for rank in rank_order if rank in rank_analysis.index]
-                rank_analysis = rank_analysis.reindex(ordered_index)
-
-                plt.figure(figsize=(12, 7))
-
-                # 使用新的'rank_analysis' DataFrame进行绘图
-                ax = sns.barplot(x=rank_analysis.index, y=rank_analysis['mean'] * 100, hue=rank_analysis.index,
-                                 palette="viridis", legend=False)
-
-                ax.set_title(f'各段位下 率先达到 {threshold}G 经济领先后胜率', fontsize=16)
-                ax.set_xlabel('玩家段位 (Rank Group)', fontsize=12)
-                ax.set_ylabel('胜率 (%)', fontsize=12)
-                ax.set_ylim(0, 105)  # 稍微增加Y轴上限，防止标签被截断
-                plt.xticks(rotation=0)
-                plt.tight_layout()
-
-                # 在循环中获取数量，并更新标签文本
-                for i, p in enumerate(ax.patches):
-                    height = p.get_height()
-                    # 从我们计算好的DataFrame中，根据索引获取对应的数量
-                    count = rank_analysis['count'].iloc[i]
-                    # 创建新的标签文本，包含百分比和数量
-                    label_text = f"{height:.1f}% | {count}"
-                    ax.annotate(label_text, (p.get_x() + p.get_width() / 2., height), ha='center',
-                                va='center', xytext=(0, 5), textcoords='offset points', fontsize=11)
-
-                bar_path = os.path.join(OUTPUT_PLOT_DIRECTORY, f"rank_bar_chart_{time.strftime('%Y%m%d_%H%M')}.png")
-                plt.savefig(bar_path)
-                plt.close()
-                print(f"[SUCCESS] 图表3 (段位胜率分析) 已保存至: {bar_path}")
+    # --- 图6: 按段位分析柱状图 ---
+    if mode == '1' and 'Medal' in valid_df.columns and valid_df['Medal'].notna().any():
+        print("正在生成图表6：按段位分析的胜率柱状图...")
+        valid_df['Rank_Group'] = valid_df['Medal'].apply(lambda x: str(x).split(' ')[0])
+        first_adv_df_for_rank = valid_df[valid_df[advantage_col_name] == 1]
+        rank_analysis = first_adv_df_for_rank.groupby('Rank_Group')['Won_Match'].agg(['mean', 'count'])
+        if not rank_analysis.empty:
+            rank_order = ["冠绝", "超凡", "万古", "传奇", "统帅", "中军", "卫士", "先锋", "未定级"]
+            ordered_index = [rank for rank in rank_order if rank in rank_analysis.index]
+            rank_analysis = rank_analysis.reindex(ordered_index)
+            plt.figure(figsize=(12, 7))
+            ax = sns.barplot(x=rank_analysis.index, y=rank_analysis['mean'] * 100, hue=rank_analysis.index,
+                             palette="viridis", legend=False)
+            ax.set_title(f'各段位下 率先达到 {threshold}G 经济领先后胜率', fontsize=16)
+            ax.set_xlabel('玩家段位 (Rank Group)', fontsize=12);
+            ax.set_ylabel('胜率 (%)', fontsize=12);
+            ax.set_ylim(0, 105)
+            plt.xticks(rotation=0);
+            plt.tight_layout()
+            for i, p in enumerate(ax.patches):
+                height = p.get_height()
+                count = rank_analysis['count'].iloc[i]
+                label_text = f"{height:.1f}% | {count}"
+                ax.annotate(label_text, (p.get_x() + p.get_width() / 2., height), ha='center', va='center',
+                            xytext=(0, 5), textcoords='offset points', fontsize=11)
+            chart6_path = os.path.join(OUTPUT_PLOT_DIRECTORY, f"06_段位经济优势胜率_{time.strftime('%Y%m%d_%H%M')}.png")
+            plt.savefig(chart6_path);
+            plt.close()
+            print(f"[SUCCESS] 图表6 (段位胜率分析) 已保存至: {chart6_path}")
 
 
 # ==============================================================================
